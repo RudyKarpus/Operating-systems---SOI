@@ -79,18 +79,3 @@ Design and partially implement a **simple file system** with the following const
 - After a failure, the system should require only **minimal recovery steps** upon reinsertion.  
 - **No concurrent access** (single-threaded use case).  
 
----
-
-## **How to Use This Repository**  
-Each task is implemented in a separate folder (`task1`, `task2`, ..., `task6`). The folder structure includes:  
-- **Source code** for the solution.  
-- **Documentation** explaining the implementation.  
-- **Test cases** (if applicable).  
-
----
-
-## **Contributing**  
-Feel free to submit pull requests with improvements, additional test cases, or alternative implementations.  
-
----
-
