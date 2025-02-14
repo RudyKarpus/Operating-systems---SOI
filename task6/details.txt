@@ -1,118 +1,138 @@
-1.	Założenia:
-	-Alokacja ciągła
-	-Rozmiar  3704 bajtów
-	-Odporność na awarię w trakcie operacji krytycznych
-	-Proste czynności naprawcze
-	-Bez dostępu współbieżnego
-2.	Założenia Szczegółowe:
-	-56 bloków pamięci po 64 bajty
-	-Maksymalnie 16 deskryptorów plików
-	-Blok kontrolny zapewniający transakcyjność operacji krytycznych
-	-Nazwa pliku maksymalnie 4 znaki
-	-Po włączeniu systemu plików sprawdzane jest, czy żadna operacja nie zostałą przerwana w trakcie, jesli tak wywoływana jest funkcja naprawcza
-3.	Pola pamięci:
+1. Assumptions:
+	Continuous allocation
+	Size: 3704 bytes
+	Failure resistance during critical operations
+	Simple repair procedures
+	No concurrent access
+2. Detailed Assumptions:
+	56 memory blocks of 64 bytes each
+	A maximum of 16 file descriptors
+	A control block ensuring transactional integrity of critical operations
+	File name limited to a maximum of 4 characters
+	Upon filesystem startup, the system checks if any operation was interrupted; if so, a repair function is triggered
+3. Memory Fields:
+	-- 4 bytes --
+	Critical Section - Stores information about the last executed operation, used to complete the operation in case of an abrupt interruption:
+	Operation type (1 byte) - -1 = empty, 0 = file deletion, 1 = file writing
+	Index in the descriptor table (1 byte)
+	New memory block index (1 byte)
+	Operation size (1 byte)
+	-- 112 bytes --
+	File Descriptor Table - Stores information about files saved on disk:
+	Memory block index (1 byte) - -2 = descriptor unused, -1 = file created but memory not yet allocated
+	Size (1 byte)
+	File name (4 bytes)
+	-- 4 bytes --
+	Free Block Map - Stores information on which memory blocks are free or occupied:
+	4 bytes, where each bit represents a segment (0 = free, 1 = occupied)
+	8 unused bits without an assigned segment
+	-- 3584 bytes --
+	Memory Space: 3584 bytes
+4. Memory Efficiency: 3584/3704 ≈96.7%
 
-	-- 4 bajty --
-	-Sekcja krytyczna - Przechowuję informację na temat ostatniej wykonywanej operacji. Wykorzystywany do dokończenia operacji przy nagłym przerwaniu:
-		-typ operacji					1 bajt			-1 = pusty 	0 = usuwanie pliku 	1 = zapisywanie pliku
-		-indeks w tablicy deksryptorów	1 bajt
-		-nowy indeks bloku pamięci		1 bajt
-		-rozmiar wykonywanej operacji	1 bajty			
-		
-	-- 112 bajtów --
-	-Tablica deskryptorów plików - Przechowują informację na temat zapisanych na dysku plików:
-		-indeks bloku w pamięci			1 bajt 			-2 = deskryptor nie używany		-1 = plik stworzony, pamięć jeszcze nie przydzielona	
-		-rozmiar						1 bajt
-		-nazwa 							4 bajty
-		
-	-- 4 bajtów --
-	-Mapa bloków wolnych - Przechowuje informacji, które bloki pamięci są wolne, które zajęte:
-		-4 bajtów, dla każego segmentu 1 bit opowiada 0 = wolny	1 = zajęty		8 bitów wolnych bez przydzielonego segmentu
-		
-	-- 3584 bajtów --
-	-Przestrzeń pamięciowa:
-		- 3584 bajty
-		
-4.	Efektynowść pamięci:
-	
-	3584 /  3704 ≈ 96.7%
-	
-5.	Dostępne operacje:
-	Używane skróty:
-		TDP 	- 	tablica deskryptorów plików
-		TDOP 	-	tablica deskryptorów otwartych plików
-		MBW 	- 	mapa bloków wolnych
-		SK		-	sekcja krytyczna
-	1. Open file(nazwa pliku)
+5. Available Operations:
+	Used Abbreviations:
+	FDT – File Descriptor Table
+	OFDT – Open File Descriptor Table
+	FBM – Free Block Map
+	CS – Critical Section
+	1. Open file(file_name)
 	{
-		indeks = Przeszukaj po nazwie pliku TDP i znajdź odpowiedający mu indeks i go zwróć. 
-			Jeśli nie istnieje znajdź wolne miejsce w TDP na plik i ustaw indeks bloku na -1, rozmiar na 0 i zapisz nazwę i zwróć indeks TDP pod którym został zapisany.
-		Sprawdź po indeks czy do TDOP jest ten idenks wpisany. Jeśli nie jest kontynuj.
-		Znajdź wolne miejsce w TDOP i zapisz tam indeks i bajty wskazujące na adres w pamięci pliku na 0
+		index = Search for the file name in the FDT and find the corresponding index.  
+		If it does not exist, find a free slot in the FDT, set the block index to `-1`, size to `0`, save the name, and return the index.  
+
+		Check if the index is present in the OFDT. If not, continue.  
+		Find a free slot in the OFDT, store the index, and set the pointer bytes to `0`.
 	}
-	
-	2. Close file(nazwa pliku)
+	2. Close file(file_name)
 	{
-		indeks = Przeszukaj po nazwie pliku TDP i znajdź odpowiedający mu indeks i go zwróć. Jeśli nie ma, zakończ funkcję
-		Sprawdź po indeks czy do TDOP jest ten idenks wpisany. Jeśli jest, to nadpisz 0 na -1 
+		index = Search for the file name in the FDT and find the corresponding index.  
+		If it does not exist, terminate the function.  
+
+		Check if the index is present in the OFDT.  
+		If it is, overwrite `0` with `-1`.  
 	}
-	3. Read from file(indeksTDP)
+	3. Read from file(FDT_index)
 	{
-		wskaźnik = na podstawie indeksuTDP znajdź w TDOP blok odpowiadający czytanemu pliku i zapisz wartość wskaźnika na którego wskazuje
-		Odczytaj z TDP indeks bloku w pamięci i rozmiar i przejdź do niego
-		Literuj, odczytuj dane od offsetu na który wskazuje wskaźnik przez pamięć aż do momentu, gdy wskaźnik wyrówna się z rozmiarem.
-		Zwróć wtedy odczytane dane
+		pointer = Based on the FDT_index, find the corresponding block in the OFDT and store the pointer value it refers to.  
+
+		Read the memory block index and size from the FDT and navigate to it.  
+		Iterate, reading data from the offset indicated by the pointer through the memory until the pointer matches the file size.  
+		Return the read data.  
 	}
-	4.Save to file(indeksTDP, dane)
+	4. Save to file(FDT_index, data)
 	{
-		Na podstawie indeksuTDP znajdź w TDOP blok odpowiadający temu plikowi, jesli jest kontynuj.
-		rozmiar, indeks bloku w pamięci = znajdź na podstawie indeksTDP w TDP.
-		// Znajdujemy od jakiego segmentu w pamięci możemy zacząć zapisywanie
-		Jeśli indeks = -1
-			Odczytaj rozmiar danych i wylicz ile segmentów pamięci będzie zajmować i na podstawie MPW znajdź wolne miejsce w pamięci.
-		Inaczej Jeśli rozmiar < dane.rozmiar
-			wylicz ile segmentów pamięci będzie zajmować i na podstawie MBW, najpierw sprawdź czy nowy rozmiar da się nadpisać od już zajmowanego indeksu, jesli nie znajdź wolne miejsce w pamięci.
-		//	Jeśli rozmiar > dane.rozmiar, to na pewno będziemy w stanie zapisać dany plik od indeksu bloku, więc nie musimy wykonywać żadnych dodatkowych operacji
-		Zapisz dane od znalezionego wolnego segmentu.
-		Zapisz do SK typ akcji jako 1, indeks bloku deskryptorów jako indeksTDP, nowy indeks bloku pamięci jako początkowy indeks wolnego segmentu, rozmiar jako dane.rozmiar
-		Uaktualnij w MBW bity na 1 odpowiadające odpowiednim zajętych segmentow w pamięci 
-			i jeśli indeks inny od indeksu znalezionego wolnego segmentu na podstawie rozmiar i przedtem znalezionego indeksu bloku w pamięci ustaw odpowiednie bity na 0
-		Uaktualnij TDP na podstawie indeksTDP i zapisz jako indeks bloku w pamięci poczatkowy indeks znalezionego wolnego segmentu i rozmiar jako dane.rozmiar
-		Zmień wartość w SK typu akcji na -1
-		
+		Find the corresponding block in the OFDT based on FDT_index. If found, continue.  
+		size, memory_block_index = Retrieve from the FDT based on the FDT_index.  
+
+		// Determine from which memory segment the writing can begin  
+		If memory_block_index == `-1`:  
+			Calculate the data size and determine how many memory segments are required.  
+			Find free memory space based on the FBM.  
+		Else if size < data.size:  
+			Calculate required memory segments and check if the new size can overwrite the already occupied index in the FBM.  
+			If not, find new free memory space.  
+
+		// If size > data.size, the file can definitely be saved starting from the block index, so no additional operations are needed.  
+		Write data from the found free segment.  
+
+		Save in CS:  
+		- action type = `1`  
+		- descriptor index = FDT_index  
+		- new memory block index = starting free segment index  
+		- size = data.size  
+
+		Update the FBM, marking corresponding occupied segments as `1`.  
+		If the memory block index differs from the found free segment index, mark previous blocks as `0`.  
+
+		Update the FDT with the new memory block index and size.  
+		Change CS action type to `-1`.  
 	}
-	5.Delete file(nazwa pliku)
+	5. Delete file(file_name)
 	{
-		indeksTDP, rozmiar = Przeszukaj po nazwie pliku TDP i znajdź odpowiedający mu indeks, rozmiar i je zwróć. Jeśli nie ma, zakończ funkcję
-		Zapisz do SK typ akcji jako 0, indeks bloku deskryptora jako TDP, indeks bloku pamięci jako odczytany TDP oraz znaleziony rozmiar
-		Oblicz na podstawie rozmiaru ile segmentów pamięci zajmował plik i zaktualizuj MBW.
-		Wróc do znalezionego przedtem bloku w TDP i ustaw indeks bloku pamięci na -2
-		Zmień wartość w SK typu akcji na -1
+		FDT_index, size = Search for the file name in the FDT and retrieve the corresponding index and size.  
+		If it does not exist, terminate the function.  
+
+		Save in CS:  
+		- action type = `0`  
+		- descriptor index = FDT  
+		- memory block index = retrieved from FDT  
+		- size = found size  
+
+		Calculate the number of memory segments occupied by the file and update the FBM.  
+		Return to the previously found block in the FDT and set the memory block index to `-2`.  
+		Change CS action type to `-1`.  
 	}
-	//funkcja naprawcza wywołująca się po starcie systemu
-	6.Repair()
+	6. Repair Function (executed at system startup)
 	{
-		Sprawdź czy w SK typ akcji jest != -1
-		Jeśli = 1
-			Sprawdź w TDP na podstawie indeksuTDP czy zapisany tam indeks bloku pamięci jest taki sam jak nowy indeks pamięci zapisany w SK.
-			Jeśli nie:
-				zaktualizuj na podstawie indeksu bloka pamięci i rozmiaru starych danych odpowiednie pola MBW na 0
-			Zaktualizuj odpowiednie miejsce w TDP informacjami z SK zmieniając indeks bloka pamięci na nowy indeks pamięci z SK oraz romzar na nowy rozmiar zapisany w SK
-			Zmień wartość w SK typu akcji na -1
-		Jeśli = 0
-			Znajdź w TDP na podstawie indeksuTDP z SK indeks segmentu pamięci oraz rozmiar
-			oblicz na podstawie rozmiaru ile segmentów pamięci zajmował plik i zaktualizuj MBW.
-			wróc do znalezionego przedtem bloku w TDP i ustaw indeks bloku pamięci na -2
-			Zmień wartość w SK typu akcji na -1
+		Check if CS action type is `!= -1`.  
+		If `1`:  
+			Verify in the FDT whether the stored memory block index matches the new memory index in CS.  
+			If not, update the FBM, marking old data as `0`.  
+			Update the FDT entry with the new memory index and size from CS.  
+			Change CS action type to `-1`.  
+		If `0`:  
+			Find the memory segment index and size in the FDT based on the CS FDT_index.  
+			Calculate the occupied memory segments and update the FBM.  
+			Return to the previously found block in the FDT and set the memory block index to `-2`.  
+			Change CS action type to `-1`.  
 	}
-6. Opis symulacji
-	//fs.cpp
-	Stworzyłem klasę FileSystem, która posiada zmienne odpowiadające polą pamięci i ma dwie funkcje write i repair, które symulują działanie zapisywania i naprawy systemu.
-	Jest też funkcja create_file, ale ona została stworzona tylko na potrzeby zapisania informacji do tablicy deksryptorów plików i nie jest funkcjonalna. 
-	//main.cpp, results.md
-	W main testuje 3 możliwe przerwania zapisywania i od razu później je naprawiam i każe systemowi, żeby wypisał swoją zawartość, wyniki w results.md
-	1 - od razu po zapisaniu danych do sekcji krytycznej
-	2 - po ustawioniu w mapie bloków wolnych odpowiednich plików na 1
-	3 - zaraz przed zmianą indeksu or rozmiaru w tablicy deksryptorów pliku
-	4 - po zapisaniu do tablicy deskrypotra plików nowego indeksu, ale nie rozmiaru
-	Po każdym przerwaniu a później naprawieniu system wyświetla dane tak jakby doszło do normalnego zapisanie, więc naprawa przebiega poprawnie
+7. Simulation Description
+	fs.cpp
+	I created a FileSystem class that contains variables corresponding to the memory fields and two main functions:
+
+	write (simulates saving to the system)
+	repair (simulates system recovery)
+	Additionally, there's a create_file function, but it was only designed for inserting information into the file descriptor table and is not fully functional.
+
+	main.cpp & results.md
+	In main, I test three possible interruptions during writing and immediately afterward attempt to repair and display the filesystem state. The results are stored in results.md.
+
+	Tested interruptions:
+
+	Right after saving data to the critical section
+	After setting the free block map entries to 1
+	Just before updating the descriptor table index and size
+	After updating the descriptor table index, but before updating the size
+	After each interruption and subsequent repair, the system displays data as if the writing process completed normally, confirming that the repair function works correctly.
+
